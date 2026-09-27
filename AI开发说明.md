@@ -1,97 +1,51 @@
 # Forge Neo 图片工坊：AI / 开发者交接说明
 
-这份文档写给以后接手本项目的 AI、维护者和扩展开发者。先理解数据流，再改 UI；不要把自动打码、透明超分和普通水印混成一个不可测试的大函数。
+本扩展只负责图片压缩、多格式导出、自定义水印和透明图超分。二次元自动打码已经迁移到独立的 `[自动打码]` 扩展，不要把两个扩展重新合并。
 
-## 项目目标
+## 数据流
 
-插件在 Forge Neo 里提供一个独立的“图片工坊”页签，当前有两条处理路径：
-
-1. **常规图像路径**：读取图片 → EXIF 方向校正 → 缩放或透明图超分 → 图片水印 → 文字水印 → WebP/PNG/JPEG/TIFF 编码。
-2. **二次元打码路径**：读取静态图片 → dghs-imgutils 输出检测框 → 生成几何/轮廓遮罩 → 扩边缘 → 马赛克或高斯模糊 → 保存图片和 CSV/ZIP 报告。
-
-两条路径共享输入目录安全检查、任务目录、停止事件和 Forge 任务锁，但处理内核独立。后续 AI 修改时，优先保持这种边界。
+```text
+读取图片 → EXIF 方向校正 → 普通缩放或透明图超分
+        → 图片水印 → 文字水印 → WebP/PNG/JPEG/TIFF 编码
+```
 
 ## 目录与职责
 
 ```text
 scripts/image_workshop.py             Forge 扩展入口，只注册 on_ui_tabs
 forge_image_workshop/ui.py            Gradio 面板、参数转换、Forge 状态和任务锁
-forge_image_workshop/engine.py        RGBA 缩放、超分、水印、格式编码
+forge_image_workshop/engine.py        RGBA 缩放、透明超分、水印、格式编码
 forge_image_workshop/forge_adapter.py Forge sd_upscalers 到插件内核的适配
-forge_image_workshop/batch.py         常规图片批处理、CSV/ZIP、预览
-forge_image_workshop/censor.py        二次元图片检测、遮罩、图片处理
-tests/test_engine.py                  常规路径回归
-tests/test_censor.py                  自动打码纯算法回归
-requirements-censor.txt               自动打码可选依赖
-AI开发说明.md                         本文档
+forge_image_workshop/batch.py         图片批处理、CSV/ZIP、预览
+tests/test_engine.py                  图像和批处理回归
 ```
 
-扩展入口不能在导入时加载 dghs-imgutils。Forge 用户可能只想压缩图片；可选依赖导入失败不能让整个 Forge 启动失败。
+扩展入口不加载任何自动打码模型或额外检测依赖。Forge 用户只安装图片工坊时，不会触发二次元检测包和模型下载。
 
-## 自动打码原理
+## 透明图超分
 
-检测器接收 BGR `numpy.ndarray`，返回半开区间框 `(x0, y0, x1, y1)`。`AnimeDetector` 使用 dghs-imgutils 的 `detect_censors`；默认检测 `penis`、`pussy`，可选 `nipple_f`。这些标签是外部模型的契约。
+彩色图与反向 Alpha 遮罩分别经过 Forge 超分模型，再合并回 RGBA。ComfyUI 的 MASK 表示透明程度，因此输入遮罩是 `1-Alpha`，合并时再次反转。全不透明或恒定透明度图片会跳过无意义的遮罩模型调用；Lanczos 只对 Alpha 做普通插值。
 
-检测器只负责“哪里可能需要处理”，不负责渲染。渲染步骤固定为：
+## Forge 规则
 
-```text
-检测框
-  └─ shape=rect       直接矩形填充
-  └─ shape=ellipse    椭圆填充
-  └─ shape=fit        GrabCut 贴合轮廓，失败回退椭圆
-       ↓
-合并多个 mask → 椭圆核膨胀 dilate_px → 全图生成马赛克/模糊图 → 只在 mask 区域替换
-```
-
-`strength` 对马赛克表示格子粒度分母，对模糊表示高斯核强度近似值。不要直接把检测框裁掉或填纯色，否则会产生明显矩形边界，也不符合原工具的处理意图。
-
-自动打码只接受静态单帧图片；动画和视频会被输入层过滤或明确拒绝。
-
-## 为什么没有把检测依赖写进主 requirements
-
-`dghs-imgutils` 会引入模型下载和额外版本约束，只对自动打码有用，写入主依赖会让普通图片工坊安装变慢。因此：
-
-- 主插件导入不能依赖这个包。
-- `requirements-censor.txt` 是显式可选依赖。
-- 安装命令使用 `--no-deps`，因为 dghs-imgutils 0.19.0 的元数据要求 `numpy<2`，会和 Forge Neo 的 NumPy 2 冲突；直接依赖被逐项列出，不能改回普通无约束安装。
-- Windows 用户可双击 `安装自动打码依赖.bat`。
-- Forge Neo 环境应使用 `venv/Scripts/python.exe -m pip`，不要用系统 Python 混装。
-- 首次检测模型可能从网络下载；安装成功不等于模型下载成功。
-
-若未来 Forge 提供正式的扩展依赖安装回调，可以把可选安装接入回调，但仍要保留 lazy import 和清晰的缺包错误。
-
-## Forge Neo 集成规则
-
-- `scripts/image_workshop.py` 只负责 `script_callbacks.on_ui_tabs(create_ui)`。
-- GPU/模型任务通过 `call_queue.queue_lock` 与 Forge 其他任务串行，避免超分和生成同时抢显存。
-- 处理前调用 `shared.state.begin(job=...)`，`finally` 中必须调用 `shared.state.end()` 并恢复 `interrupted/skipped/stopping_generation`。
-- 不修改 Forge 源码，不 monkey patch Gradio。
-- `--hide-ui-dir-config` 开启时隐藏本机目录、输出目录和打开文件夹按钮；后端也必须再次拒绝目录操作。
-- 输出写入带时间和随机后缀的独立任务目录，禁止输出目录等于输入目录或成为输入目录上级。
-- Gradio 回调返回值必须与输出组件数量严格一致；新增一个 `State` 输出时，所有成功、失败、忙碌分支都要返回四元组。
+- 任务通过 `call_queue.queue_lock` 与 Forge 其他 GPU 任务串行。
+- `shared.state.begin()` 与 `shared.state.end()` 必须成对出现，失败和取消也要恢复 Forge 状态。
+- `--hide-ui-dir-config` 开启时隐藏目录输入、输出目录和打开文件夹按钮；后端仍拒绝目录操作。
+- 输出写入唯一任务目录，不能覆盖原文件，也不能让输出目录成为输入目录的上级。
+- 模型静默返回原图时必须报错，不能把普通插值当成超分成功。
 
 ## 修改建议
 
-1. 先给纯函数加测试，再接 Gradio。遮罩合成、Alpha 保留和取消逻辑都可以不用启动 Forge 测试。
-2. 新增图片格式时，同时修改 `IMAGE_EXTENSIONS`、输入 UI、输出扩展名、报告和测试；不要只改文件选择器。
-3. 不要把 detector 对象写进全局缓存，除非明确处理并发、模型显存释放和不同会话的参数隔离。
-4. 任何“保存成功”的状态都应在文件真实存在并可重新读取后再记录。
-5. 对 CSV 的用户文件名和错误文字做公式注入防护；对 HTML 报告使用 `html.escape`。
-6. 不要自动覆盖已有输出。当前任务目录唯一化，文件名使用序号加清理后的 stem。
-7. 更新 UI 文案时同步更新 README、CHANGELOG 和本交接文档，尤其是依赖、模型下载和未验证范围。
+1. 先为纯函数增加回归测试，再接 Gradio。
+2. 新增图片格式时同步修改输入扩展名、输出扩展名、报告和测试。
+3. 保留 Alpha、metadata 清理、文件名清理、CSV 公式注入防护、取消清理和输出目录安全检查。
+4. 水印颜色合成不能重复乘 Alpha；保存成功前要确认文件真实存在并可重新读取。
+5. 任何 UI 参数变化都同步更新 README、CHANGELOG 和本交接文档。
 
-## 验证顺序
+## 验证
 
 ```powershell
-# 纯图像和打码算法回归
 python -B -m unittest discover -s tests -v
-
 ```
 
-交接时要区分纯算法测试、Gradio 组件/回调构建和真实模型推理。不能只因为 Python 能导入就声称 Forge 页面和检测模型都可用；在目标 Forge Neo 环境中手动打开“图片工坊”验证 UI 和模型即可。
-
-## 当前限制与后续方向
-
-- 自动打码检测依赖外部模型，结果必须人工抽查；本项目不承诺检测召回率或法律合规性。
-- 当前 UI 没有把检测框可视化编辑；可考虑增加“预览首张 + 应用参数”，但不要阻塞批处理接口。
-- 未来可增加并发安全的 detector 缓存和检测框预览。
+纯算法测试、Gradio 页面构建和真实 Forge 模型推理分别记录，不能用其中一项代替另外两项。

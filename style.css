@@ -5,8 +5,7 @@
 .fiw-report table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .fiw-report th, .fiw-report td { padding: 8px; border-bottom: 1px solid #8884; text-align: left; word-break: break-word; }
 .fiw-report p { margin: 10px 0; }
-#fiw-gallery .thumbnail-item, #fiw-gallery .image-container,
-#fiw-censor-gallery .thumbnail-item, #fiw-censor-gallery .image-container {
+#fiw-gallery .thumbnail-item, #fiw-gallery .image-container {
   background-color: #c7c7c7;
   background-image: conic-gradient(#eeeeee 25%, transparent 0 50%, #eeeeee 0 75%, transparent 0);
   background-size: 20px 20px;
