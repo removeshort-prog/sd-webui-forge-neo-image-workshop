@@ -2,15 +2,15 @@
 
 为 **SD WebUI Forge Neo** 增加独立的 **图片工坊** 页签：批量压缩、多格式导出、图片和文字水印、保留透明背景的模型超分。
 
-当前版本：**v1.1.0**。
+当前版本：**v1.2.0**。
 
 - **透明图超分**：分别处理彩色图和透明遮罩，保留透明背景。
 - **自定义水印**：支持图片模板、等比 Logo、中文文字和全图平铺。
 - **批量导出**：WebP、PNG、JPEG、TIFF 可多选，附 ZIP 和 CSV 体积报告。
 - **打开输出文件夹**：在预览区下方直接打开最近一次任务的结果目录。
-- **自动打码**：可选真人/二次元检测引擎，支持图片、GIF、视频、轮廓遮罩、马赛克/模糊、检测间隔和漏检保持。
+- **二次元自动打码**：使用 dghs-imgutils 检测静态二次元图片，支持轮廓遮罩、马赛克/模糊、透明图和批量报告。
 
-主要适配和验证环境是 Forge Neo + Gradio 4.40；旧版 Forge / Gradio 3 未完成完整验证。
+主要适配和验证环境是 Forge Neo + Gradio 4.40。
 
 ## 安装
 
@@ -55,7 +55,7 @@ Windows 也可以双击插件中的 `安装到Forge.bat`，粘贴 Forge Neo 根�
 & "Forge Neo\\venv\\Scripts\\python.exe" -m pip install -r requirements-censor.txt
 ```
 
-不安装这些依赖时，原有压缩、透明超分和水印功能仍可正常使用。
+不安装这个可选依赖时，压缩、透明超分和水印功能仍可正常使用。当前 PyPI 可用的 `dghs-imgutils` 版本为 `0.19.0`，依赖文件已按此版本范围配置。
 
 ## 快速开始
 
@@ -136,7 +136,7 @@ Windows 优先使用微软雅黑/黑体。Linux/macOS 自动寻找常见中文�
 
 ## 更新
 
-v1.1.0 增加可选自动打码模块；v1.0.1 新增“📂 打开输出文件夹”。
+v1.2.0 将自动打码收敛为静态二次元图片，移除真人/GIF/视频旧路径并精简相关测试；v1.1.1 修正自动打码依赖版本；v1.1.0 增加可选自动打码模块；v1.0.1 新增“📂 打开输出文件夹”。
 
 完整版本记录见 [更新日志](CHANGELOG.md)，交接给后续 AI/开发者时请先阅读 [AI 开发说明](AI开发说明.md)。
 
@@ -148,6 +148,6 @@ v1.1.0 增加可选自动打码模块；v1.0.1 新增“📂 打开输出文件�
 python -B -m unittest discover -s tests -v
 ```
 
-测试需要 Pillow 和 OpenCV。GitHub Actions 会运行 24 项图像、媒体和批处理回归检查；模型推理和 Gradio 接口的验证环境、结果及范围见 [验证记录](验证记录.md)。
+测试需要 Pillow 和 OpenCV。GitHub Actions 会运行 24 项图像和批处理回归检查；模型推理和 Gradio 接口的验证环境、结果及范围见 [验证记录](验证记录.md)。
 
 遇到问题可提交 [Issue](https://github.com/removeshort-prog/sd-webui-forge-neo-image-workshop/issues)，注明 Forge Neo / Gradio 版本、使用的超分模型、操作步骤及控制台错误。

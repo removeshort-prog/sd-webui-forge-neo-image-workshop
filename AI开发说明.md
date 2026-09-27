@@ -7,7 +7,7 @@
 插件在 Forge Neo 里提供一个独立的“图片工坊”页签，当前有两条处理路径：
 
 1. **常规图像路径**：读取图片 → EXIF 方向校正 → 缩放或透明图超分 → 图片水印 → 文字水印 → WebP/PNG/JPEG/TIFF 编码。
-2. **自动打码路径**：读取图片/GIF/视频 → 可选检测引擎输出框 → 生成几何/轮廓遮罩 → 扩边缘 → 马赛克或高斯模糊 → 保存媒体和 CSV/ZIP 报告。
+2. **二次元打码路径**：读取静态图片 → dghs-imgutils 输出检测框 → 生成几何/轮廓遮罩 → 扩边缘 → 马赛克或高斯模糊 → 保存图片和 CSV/ZIP 报告。
 
 两条路径共享输入目录安全检查、任务目录、停止事件和 Forge 任务锁，但处理内核独立。后续 AI 修改时，优先保持这种边界。
 
@@ -19,22 +19,18 @@ forge_image_workshop/ui.py            Gradio 面板、参数转换、Forge 状�
 forge_image_workshop/engine.py        RGBA 缩放、超分、水印、格式编码
 forge_image_workshop/forge_adapter.py Forge sd_upscalers 到插件内核的适配
 forge_image_workshop/batch.py         常规图片批处理、CSV/ZIP、预览
-forge_image_workshop/censor.py        自动打码检测、遮罩、图片/GIF/视频处理
+forge_image_workshop/censor.py        二次元图片检测、遮罩、图片处理
 tests/test_engine.py                  常规路径回归
 tests/test_censor.py                  自动打码纯算法回归
 requirements-censor.txt               自动打码可选依赖
 AI开发说明.md                         本文档
 ```
 
-扩展入口不能在导入时加载 NudeNet、dghs-imgutils 或 imageio-ffmpeg。Forge 用户可能只想压缩图片；可选依赖导入失败不能让整个 Forge 启动失败。
+扩展入口不能在导入时加载 dghs-imgutils。Forge 用户可能只想压缩图片；可选依赖导入失败不能让整个 Forge 启动失败。
 
 ## 自动打码原理
 
-检测器统一接收 BGR `numpy.ndarray`，返回半开区间框 `(x0, y0, x1, y1)`。`RealDetector` 使用 NudeNet，`AnimeDetector` 使用 dghs-imgutils 的 `detect_censors`。检测类名是外部模型的契约：
-
-- 真人默认：`FEMALE_GENITALIA_EXPOSED`、`MALE_GENITALIA_EXPOSED`、`ANUS_EXPOSED`。
-- 二次元默认：`penis`、`pussy`。
-- 可选部位由 `REAL_EXTRA_TARGETS` 和 `ANIME_EXTRA_TARGETS` 管理。
+检测器接收 BGR `numpy.ndarray`，返回半开区间框 `(x0, y0, x1, y1)`。`AnimeDetector` 使用 dghs-imgutils 的 `detect_censors`；默认检测 `penis`、`pussy`，可选 `nipple_f`。这些标签是外部模型的契约。
 
 检测器只负责“哪里可能需要处理”，不负责渲染。渲染步骤固定为：
 
@@ -49,24 +45,13 @@ AI开发说明.md                         本文档
 
 `strength` 对马赛克表示格子粒度分母，对模糊表示高斯核强度近似值。不要直接把检测框裁掉或填纯色，否则会产生明显矩形边界，也不符合原工具的处理意图。
 
-## 连续媒体的时间策略
-
-`FrameCensor` 维护 `last_boxes`、`misses`、`index`：
-
-- `detect_every=1` 每帧检测；数值越大越快，但目标移动时旧框会产生拖尾。
-- 非检测帧沿用上次框。
-- 检测帧没有结果时，在 `hold` 帧内继续沿用上次框，避免检测抖动造成闪码。
-- 超过 `hold` 后清空旧框。
-
-这是一种速度与稳定性的取舍，不是目标跟踪器。以后如果加入光流或目标跟踪，应新增独立策略，不要把 `FrameCensor` 的语义偷偷改成跟踪器。
-
-GIF 使用 Pillow 逐帧读写，保存每帧 `duration` 和 `loop`。透明 GIF 先转 RGBA，检测使用 RGB/BGR，输出再放回原 Alpha。视频用 OpenCV 读取和写入临时 `mp4v`，然后在有 imageio-ffmpeg 时用 H.264/AAC 合并原音轨；转码失败会退回无音轨临时视频。视频宽高要求偶数，避免编码器偷偷改变尺寸。
+自动打码只接受静态单帧图片；动画和视频会被输入层过滤或明确拒绝。
 
 ## 为什么没有把检测依赖写进主 requirements
 
-NudeNet、dghs-imgutils 和 imageio-ffmpeg 会引入模型下载、OpenCV/深度学习依赖和额外版本约束。它们只对自动打码有用，写入主依赖会让普通图片工坊安装变慢、增加冲突概率。因此：
+`dghs-imgutils` 会引入模型下载和额外版本约束，只对自动打码有用，写入主依赖会让普通图片工坊安装变慢。因此：
 
-- 主插件导入不能依赖这三个包。
+- 主插件导入不能依赖这个包。
 - `requirements-censor.txt` 是显式可选依赖。
 - Windows 用户可双击 `安装自动打码依赖.bat`。
 - Forge Neo 环境应使用 `venv/Scripts/python.exe -m pip`，不要用系统 Python 混装。
@@ -87,7 +72,7 @@ NudeNet、dghs-imgutils 和 imageio-ffmpeg 会引入模型下载、OpenCV/深度
 ## 修改建议
 
 1. 先给纯函数加测试，再接 Gradio。遮罩合成、Alpha 保留、检测间隔和取消逻辑都可以不用启动 Forge 测试。
-2. 新增媒体格式时，同时修改 `MEDIA_EXTENSIONS`、输入 UI、输出扩展名、报告和测试；不要只改文件选择器。
+2. 新增图片格式时，同时修改 `IMAGE_EXTENSIONS`、输入 UI、输出扩展名、报告和测试；不要只改文件选择器。
 3. 不要把 detector 对象写进全局缓存，除非明确处理并发、模型显存释放和不同会话的参数隔离。
 4. 不要把检测框坐标直接用于不同尺寸的帧。检测间隔复用框时，至少在文档中说明移动目标的拖尾风险。
 5. 任何“保存成功”的状态都应在文件真实存在并可重新读取后再记录；临时文件失败要清理。
@@ -101,18 +86,12 @@ NudeNet、dghs-imgutils 和 imageio-ffmpeg 会引入模型下载、OpenCV/深度
 # 纯图像和打码算法回归
 python -B -m unittest discover -s tests -v
 
-# 在 Forge Neo 环境构建/验证 Gradio UI
-& "D:\\A-forge neo\\sd-webui-forge-neo\\venv\\Scripts\\python.exe" -B work\\verify_forge_environment.py
-& "D:\\A-forge neo\\sd-webui-forge-neo\\venv\\Scripts\\python.exe" -B work\\verify_folder_button.py
 ```
 
-交接时要区分三种结果：纯算法测试通过、Gradio 组件/回调构建通过、真实模型推理通过。不能只因为 Python 能导入就声称 Forge 页面和检测模型都可用。
+交接时要区分纯算法测试、Gradio 组件/回调构建和真实模型推理。不能只因为 Python 能导入就声称 Forge 页面和检测模型都可用；在目标 Forge Neo 环境中手动打开“图片工坊”验证 UI 和模型即可。
 
 ## 当前限制与后续方向
 
 - 自动打码检测依赖外部模型，结果必须人工抽查；本项目不承诺检测召回率或法律合规性。
-- `detect_every > 1` 不是运动跟踪，快速运动可能拖尾或漏码。
-- 视频回退到 OpenCV `mp4v` 时可能没有原音轨；需要音频时安装 imageio-ffmpeg 并检查报告。
-- GIF/视频不会进入常规 RGBA 超分和水印路径；如果未来要合并两条路径，应先定义明确的帧级流水线和音频策略。
-- 当前 UI 没有把检测框可视化编辑；可考虑增加“预览首帧 + 应用参数”，但不要阻塞批处理接口。
-- 未来可增加并发安全的 detector 缓存、帧级缩略图预览、光流/跟踪策略和可配置视频编码器。
+- 当前 UI 没有把检测框可视化编辑；可考虑增加“预览首张 + 应用参数”，但不要阻塞批处理接口。
+- 未来可增加并发安全的 detector 缓存和检测框预览。

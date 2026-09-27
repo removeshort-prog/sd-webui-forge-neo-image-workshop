@@ -12,8 +12,7 @@ from modules import call_queue, shared
 from . import forge_adapter
 from .batch import collect_sources, file_path, run_batch
 from .censor import (
-    ANIME_DEFAULT_TARGETS, ANIME_EXTRA_TARGETS, IMAGE_EXTENSIONS, MEDIA_EXTENSIONS,
-    REAL_DEFAULT_TARGETS, REAL_EXTRA_TARGETS, CensorOptions, media_sources, run_censor_batch,
+    ANIME_EXTRA_TARGETS, IMAGE_EXTENSIONS, CensorOptions, media_sources, run_censor_batch,
 )
 from .engine import Cancelled, Options, POSITIONS, load_image
 
@@ -77,16 +76,16 @@ def censor_summary_html(result):
     esc = html.escape
     rows = []
     for row in result.rows[:100]:
-        cells = [row.get(key, "") for key in ("输入文件", "媒体类型", "状态", "帧数", "打码帧", "检测框累计", "错误")]
+        cells = [row.get(key, "") for key in ("输入文件", "状态", "检测框", "错误")]
         rows.append("<tr>" + "".join(f"<td>{esc(str(cell))}</td>" for cell in cells) + "</tr>")
     status = "已停止" if result.cancelled else "处理结束"
     return (
-        f"<div class='fiw-report'><p><b>{status}</b> · 完成 {result.completed}/{result.total} 个媒体 · "
-        f"失败 {result.failed} 个 · {result.elapsed:.1f} 秒</p>"
+        f"<div class='fiw-report'><p><b>{status}</b> · 完成 {result.completed}/{result.total} 张图片 · "
+        f"失败 {result.failed} 张 · {result.elapsed:.1f} 秒</p>"
         f"<p>保存位置：<code>{esc(str(result.directory))}</code></p>"
-        "<table><thead><tr><th>输入</th><th>类型</th><th>状态</th><th>帧数</th><th>打码帧</th><th>检测框累计</th><th>错误</th></tr></thead>"
+        "<table><thead><tr><th>输入</th><th>状态</th><th>检测框</th><th>错误</th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table>"
-        "<p>自动检测不是人工审核的替代品。请抽查图片，并完整检查 GIF/视频，尤其是检测间隔大于 1 时。</p></div>"
+        "<p>自动检测不是人工审核的替代品，请抽查导出的图片。</p></div>"
     )
 
 
@@ -164,11 +163,10 @@ def execute_censor(values, session, first_only, progress):
         _jobs[session] = event
     try:
         options = CensorOptions(
-            engine=values["censor_engine"], extra_targets=tuple(values.get("censor_targets") or []),
+            extra_targets=tuple(values.get("censor_targets") or []),
             confidence=float(values["censor_confidence"]), shape=values["censor_shape"],
             mode=values["censor_mode"], dilate_px=int(values["censor_dilate"]),
-            strength=int(values["censor_strength"]), detect_every=int(values["censor_detect_every"]),
-            hold=int(values["censor_hold"]), max_megapixels=float(values["censor_max_megapixels"]),
+            strength=int(values["censor_strength"]), max_megapixels=float(values["censor_max_megapixels"]),
         )
         options.validate()
         allow_dirs = directories_allowed()
@@ -223,8 +221,7 @@ def create_ui():
         form[name] = component
         return component
 
-    # Forge classic uses Gradio 3; Forge Neo uses Gradio 4.
-    file_type = "filepath" if int(gr.__version__.split(".")[0]) >= 4 else "file"
+    file_type = "filepath"
     allow_dirs = directories_allowed()
     with gr.Blocks(analytics_enabled=False) as panel:
         gr.HTML("<div class='fiw-header'><h2>图片工坊</h2><p>透明图超分 · 自定义水印 · 批量压缩导出</p></div>")
@@ -299,35 +296,31 @@ def create_ui():
                 downloads = gr.File(label="下载 ZIP / 报告 / 单张图片", file_count="multiple", interactive=False)
                 status = gr.HTML("<p>上传图片并选择输出格式，即可开始。试处理首张也会按完整设置导出文件。</p>")
 
-                with gr.Accordion("5 · 自动打码（图片 / GIF / 视频）", open=False):
+                with gr.Accordion("5 · 二次元图片自动打码", open=False):
                     gr.Markdown(
-                        "自动检测并使用马赛克或高斯模糊覆盖目标区域。二次元和真人检测依赖需要单独安装；"
-                        "视频会输出 MP4，GIF 保留帧时长和循环。检测结果只用于打码，请务必人工抽查。"
+                        "使用 dghs-imgutils 检测二次元图片中的目标区域，再用马赛克或高斯模糊覆盖。"
+                        "只处理静态图片；检测结果只用于打码，请务必人工抽查。"
                     )
                     def add_censor(name, component):
                         censor_form[name] = component
                         return component
 
                     censor_mode = add_censor("censor_input_mode", gr.Radio(
-                        ["上传媒体", "本机文件夹"] if allow_dirs else ["上传媒体"], value="上传媒体", label="输入方式"))
+                        ["上传图片", "本机文件夹"] if allow_dirs else ["上传图片"], value="上传图片", label="输入方式"))
                     add_censor("censor_uploads", gr.File(
-                        label="上传图片、GIF 或视频（可多选）", file_count="multiple", type=file_type,
-                        file_types=sorted(MEDIA_EXTENSIONS)))
+                        label="上传图片（可多选）", file_count="multiple", type=file_type,
+                        file_types=sorted(IMAGE_EXTENSIONS)))
                     with gr.Group(visible=False) as censor_folder_group:
-                        add_censor("censor_input_dir", gr.Textbox(label="本机媒体文件夹", placeholder="例如 D:\\待处理媒体"))
+                        add_censor("censor_input_dir", gr.Textbox(label="本机图片文件夹", placeholder="例如 D:\\待处理图片"))
                         add_censor("censor_recursive", gr.Checkbox(label="包含子文件夹", value=True))
                     add_censor("censor_sort", gr.Dropdown(
                         ["路径自然排序", "文件名自然排序", "修改时间从旧到新", "修改时间从新到旧"],
                         value="路径自然排序", label="处理顺序"))
-                    with gr.Row():
-                        add_censor("censor_engine", gr.Radio(
-                            [("二次元 / AI 生成图", "anime"), ("真人照片 / 视频", "real")],
-                            value="anime", label="检测引擎"))
-                        add_censor("censor_confidence", gr.Slider(
-                            0.01, 0.99, value=0.25, step=0.01, label="置信度阈值"))
+                    add_censor("censor_confidence", gr.Slider(
+                        0.01, 0.99, value=0.25, step=0.01, label="置信度阈值"))
                     add_censor("censor_targets", gr.CheckboxGroup(
-                        [(label, code) for code, label in {**REAL_EXTRA_TARGETS, **ANIME_EXTRA_TARGETS}.items()],
-                        value=[], label="额外检测部位（核心部位始终按引擎默认开启）"))
+                        [(label, code) for code, label in ANIME_EXTRA_TARGETS.items()],
+                        value=[], label="额外检测部位（核心部位始终开启）"))
                     with gr.Row():
                         add_censor("censor_shape", gr.Radio(
                             [("贴合轮廓（GrabCut，失败回退椭圆）", "fit"), ("椭圆", "ellipse"), ("矩形", "rect")],
@@ -337,9 +330,6 @@ def create_ui():
                     with gr.Row():
                         add_censor("censor_dilate", gr.Slider(0, 100, value=15, step=1, label="扩边缘（像素）"))
                         add_censor("censor_strength", gr.Slider(4, 300, value=100, step=1, label="马赛克粒度 / 模糊强度"))
-                    with gr.Row():
-                        add_censor("censor_detect_every", gr.Slider(1, 30, value=2, step=1, label="视频检测间隔（帧）"))
-                        add_censor("censor_hold", gr.Slider(0, 120, value=8, step=1, label="漏检保持（帧）"))
                     add_censor("censor_output_dir", gr.Textbox(
                         label="自动打码输出文件夹（留空使用 Forge/outputs/image-workshop/censored）",
                         visible=allow_dirs))
@@ -348,18 +338,17 @@ def create_ui():
                         add_censor("censor_max_megapixels", gr.Slider(
                             1, 256, value=64, step=1, label="单帧像素上限（百万像素）"))
                     gr.Markdown(
-                        "视频检测间隔越大速度越快，但运动目标可能拖尾；漏检保持用于防止闪码，误检拖尾时调小。"
-                        "首次使用请先安装 `requirements-censor.txt` 中的可选依赖。"
+                        "首次使用请先安装 `requirements-censor.txt` 中的二次元检测依赖。"
                     )
                     with gr.Row():
                         censor_start = gr.Button("开始自动打码", variant="primary")
-                        censor_preview = gr.Button("试处理首个媒体")
+                        censor_preview = gr.Button("试处理首张图片")
                         censor_stop = gr.Button("停止打码")
                         censor_open_folder = gr.Button("📂 打开打码输出文件夹", size="sm", scale=0, min_width=190,
                                                         visible=allow_dirs)
-                    censor_gallery = gr.Gallery(label="自动打码结果预览（最多 20 个）", columns=2, height=360,
+                    censor_gallery = gr.Gallery(label="自动打码结果预览（最多 20 张）", columns=2, height=360,
                                                 elem_id="fiw-censor-gallery")
-                    censor_downloads = gr.File(label="下载打码 ZIP / 报告 / 媒体", file_count="multiple", interactive=False)
+                    censor_downloads = gr.File(label="下载打码 ZIP / 报告 / 图片", file_count="multiple", interactive=False)
                     censor_status = gr.HTML("<p>尚未运行自动打码。</p>")
         inputs = set(form.values()) | {session}
 
