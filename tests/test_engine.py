@@ -1,4 +1,3 @@
-import csv
 import tempfile
 import unittest
 import zipfile
@@ -173,23 +172,39 @@ class EngineTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "没有放大"):
                 upscale(sample().convert("RGB"), "bad", 2, 64, lambda: None)
 
-    def test_batch_unique_names_report_zip_and_error_recovery(self):
+    def test_batch_uses_date_folder_without_csv_and_error_recovery(self):
         for folder in ("a", "b"):
             (self.root / folder).mkdir()
             sample().save(self.root / folder / "same.png")
         corrupt = self.root / "bad.png"
         corrupt.write_bytes(b"not an image")
         sources = [self.root / "a/same.png", corrupt, self.root / "b/same.png"]
-        result = run_batch(sources, self.root / "out", Options(formats=("PNG", "WEBP")))
+        with patch("forge_image_workshop.batch.time.strftime", side_effect=["2026-09-28", "120000"]):
+            result = run_batch(sources, self.root / "out", Options(formats=("PNG", "WEBP")))
         self.assertEqual((result.completed, result.failed, len(result.outputs)), (2, 1, 4))
+        self.assertEqual(result.directory, (self.root / "out/2026-09-28").resolve())
         self.assertEqual(len({path.name for path in result.outputs}), 4)
         with zipfile.ZipFile(result.archive) as archive:
-            self.assertEqual(len(archive.namelist()), 5)
+            self.assertEqual(archive.namelist(), [path.name for path in result.outputs])
             self.assertIsNone(archive.testzip())
-        with result.report.open(encoding="utf-8-sig", newline="") as handle:
-            rows = list(csv.DictReader(handle))
-        self.assertEqual(len(rows), 5)
-        self.assertIn("UnidentifiedImageError", rows[2]["错误"])
+        self.assertEqual(len(result.rows), 5)
+        self.assertIn("UnidentifiedImageError", result.rows[2]["错误"])
+        original_files = {path: path.read_bytes() for path in result.directory.iterdir()}
+        for day in ("2026-09-28", "2026-09-29"):
+            with self.subTest(day=day), patch("forge_image_workshop.batch.time.strftime", side_effect=[day, "120000"]):
+                repeated = run_batch([sources[0]], self.root / "out", Options(formats=("PNG", "WEBP")),
+                                     make_zip=day == "2026-09-28")
+            self.assertEqual(repeated.directory, (self.root / "out" / day).resolve())
+            self.assertEqual(repeated.completed, 1)
+            self.assertTrue(set(repeated.outputs).isdisjoint(result.outputs))
+            if repeated.archive:
+                with zipfile.ZipFile(repeated.archive) as archive:
+                    self.assertEqual(archive.namelist(), [path.name for path in repeated.outputs])
+            else:
+                self.assertEqual(set(repeated.directory.iterdir()), set(repeated.outputs))
+        self.assertEqual(original_files, {path: path.read_bytes() for path in original_files})
+        self.assertFalse(list((self.root / "out").rglob("*.csv")))
+        self.assertTrue(all(path.is_file() for path in result.directory.iterdir()))
 
     def test_cancel_retains_completed_files(self):
         paths = []

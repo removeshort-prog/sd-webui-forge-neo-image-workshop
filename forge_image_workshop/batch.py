@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import re
 import time
 import uuid
@@ -60,7 +59,6 @@ class BatchResult:
     previews: list = field(default_factory=list)
     rows: list = field(default_factory=list)
     archive: Path | None = None
-    report: Path | None = None
     elapsed: float = 0
 
 
@@ -69,9 +67,10 @@ def run_batch(sources, destination, options, templates=(), model_upscale=None,
     options.validate()
     if options.image_enabled and not templates:
         raise ValueError("已启用图片水印，请上传模板")
-    stamp = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
-    directory = Path(destination).resolve() / stamp
-    directory.mkdir(parents=True, exist_ok=False)
+    date_folder = time.strftime("%Y-%m-%d")
+    run_id = time.strftime("%H%M%S") + "-" + uuid.uuid4().hex[:8]
+    directory = Path(destination).resolve() / date_folder
+    directory.mkdir(parents=True, exist_ok=True)
     result = BatchResult(directory, len(sources))
     started = time.monotonic()
     for index, path in enumerate(sources, start=1):
@@ -81,7 +80,7 @@ def run_batch(sources, destination, options, templates=(), model_upscale=None,
             loaded = load_image(path, options.max_megapixels)
             image, watermark = process_image(loaded, options, templates, model_upscale, check_cancel)
             stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", path.stem).strip(" .")[:100] or "image"
-            prefix = f"{index:05d}_{stem}"
+            prefix = f"{run_id}_{index:05d}_{stem}"
             source_bytes = path.stat().st_size
             first_output = None
             for fmt in dict.fromkeys(options.formats):
@@ -110,20 +109,12 @@ def run_batch(sources, destination, options, templates=(), model_upscale=None,
             result.failed += 1
             result.rows.append({"输入文件": path.name, "状态": "失败", "错误": f"{type(exc).__name__}: {exc}"})
         progress(index / len(sources), f"已完成 {index}/{len(sources)}")
-    result.report = directory / "处理报告.csv"
-    fields = ["输入文件", "输出文件", "状态", "格式", "尺寸", "原始字节", "输出字节", "体积变化", "图片水印", "错误"]
-    with result.report.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for row in result.rows:
-            # Keep filenames/text from being interpreted as spreadsheet formulas.
-            writer.writerow({key: "'" + value if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r")) else value for key, value in row.items()})
     if make_zip and result.outputs:
         progress(1, "正在打包下载文件")
-        result.archive = directory / "处理结果.zip"
+        result.archive = directory / f"{run_id}_处理结果.zip"
         # Encoded images are already compressed; ZIP_STORED avoids a slow second compression.
         with zipfile.ZipFile(result.archive, "x", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
-            for path in [*result.outputs, result.report]:
+            for path in result.outputs:
                 archive.write(path, arcname=path.name)
     result.elapsed = time.monotonic() - started
     return result

@@ -65,7 +65,7 @@ def summary_html(result):
         f"<p>保存位置：<code>{esc(str(result.directory))}</code></p>"
         "<table><thead><tr><th>图片</th><th>格式</th><th>尺寸</th><th>体积变化</th><th>状态</th><th>错误</th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table>"
-        "<p>体积变化相对于输入文件；超分或增加水印后可能变大。完整记录见 CSV。预览最多 20 张，单文件下载最多 100 个，ZIP 包含所有输出。</p></div>"
+        "<p>体积变化相对于输入文件；超分或增加水印后可能变大。预览最多 20 张，单文件下载最多 100 个，ZIP 包含本次全部输出。</p></div>"
     )
 
 
@@ -125,7 +125,7 @@ def execute(values, session, first_only, progress):
                 shared.state.interrupted = False
                 shared.state.skipped = False
                 shared.state.stopping_generation = False
-        downloads = ([str(result.archive)] if result.archive else []) + [str(result.report)]
+        downloads = [str(result.archive)] if result.archive else []
         downloads.extend(str(path) for path in result.outputs[:100])
         return result.previews, downloads, summary_html(result), str(result.directory)
     except Exception as exc:
@@ -203,7 +203,7 @@ def create_ui():
                     add("make_zip", gr.Checkbox(label="生成 ZIP 批量下载包", value=True))
                     add("output_dir", gr.Textbox(label="输出文件夹（留空使用 Forge/outputs/image-workshop）", visible=allow_dirs))
                     add("max_megapixels", gr.Slider(1, 256, value=64, step=1, label="单张及模型中间图像上限（百万像素）"))
-                    gr.Markdown("WebP / PNG / TIFF 支持透明；JPEG 会填充底色。仅处理静态单帧图片。输出写入独立任务文件夹。")
+                    gr.Markdown("WebP / PNG / TIFF 支持透明；JPEG 会填充底色。仅处理静态单帧图片。输出按日期归档到当天文件夹。")
             with gr.Column(scale=6):
                 with gr.Row():
                     start = gr.Button("开始批量处理", variant="primary")
@@ -213,7 +213,7 @@ def create_ui():
                 with gr.Row():
                     open_folder = gr.Button("📂 打开输出文件夹", size="sm", scale=0, min_width=180,
                                             visible=allow_dirs, elem_id="fiw-open-folder")
-                downloads = gr.File(label="下载 ZIP / 报告 / 单张图片", file_count="multiple", interactive=False)
+                downloads = gr.File(label="下载 ZIP / 单张图片", file_count="multiple", interactive=False)
                 status = gr.HTML("<p>上传图片并选择输出格式，即可开始。试处理首张也会按完整设置导出文件。</p>")
 
         inputs = set(form.values()) | {session}
