@@ -52,10 +52,10 @@ Windows 也可以双击插件中的 `安装到Forge.bat`，粘贴 Forge Neo 根�
 自动打码依赖是可选的。需要时双击 `安装自动打码依赖.bat`，或使用 Forge Neo 的 Python 执行：
 
 ```powershell
-& "Forge Neo\\venv\\Scripts\\python.exe" -m pip install -r requirements-censor.txt
+& "Forge Neo\\venv\\Scripts\\python.exe" -m pip install --no-deps -r requirements-censor.txt
 ```
 
-不安装这个可选依赖时，压缩、透明超分和水印功能仍可正常使用。当前 PyPI 可用的 `dghs-imgutils` 版本为 `0.19.0`，依赖文件已按此版本范围配置。
+不安装这些可选依赖时，压缩、透明超分和水印功能仍可正常使用。当前 PyPI 可用的 `dghs-imgutils` 版本为 `0.19.0`，但它的旧元数据要求 NumPy 1；安装文件使用 `--no-deps` 并补齐直接依赖，保留 Forge Neo 当前 NumPy，不会自动降级主环境。若检测模型本身与当前环境不兼容，面板会显示具体导入错误。
 
 ## 快速开始
 
