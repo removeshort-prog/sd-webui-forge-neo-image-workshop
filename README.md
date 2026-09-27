@@ -2,12 +2,13 @@
 
 为 **SD WebUI Forge Neo** 增加独立的 **图片工坊** 页签：批量压缩、多格式导出、图片和文字水印、保留透明背景的模型超分。
 
-当前版本：**v1.0.1**。
+当前版本：**v1.1.0**。
 
 - **透明图超分**：分别处理彩色图和透明遮罩，保留透明背景。
 - **自定义水印**：支持图片模板、等比 Logo、中文文字和全图平铺。
 - **批量导出**：WebP、PNG、JPEG、TIFF 可多选，附 ZIP 和 CSV 体积报告。
 - **打开输出文件夹**：在预览区下方直接打开最近一次任务的结果目录。
+- **自动打码**：可选真人/二次元检测引擎，支持图片、GIF、视频、轮廓遮罩、马赛克/模糊、检测间隔和漏检保持。
 
 主要适配和验证环境是 Forge Neo + Gradio 4.40；旧版 Forge / Gradio 3 未完成完整验证。
 
@@ -47,6 +48,14 @@ Forge Neo/extensions/sd-webui-forge-neo-image-workshop/
 Windows 也可以双击插件中的 `安装到Forge.bat`，粘贴 Forge Neo 根目录路径。安装器仅复制文件；目标插件或旧名称插件已存在时会停止，避免重复安装。通过 Git 安装的版本可用扩展管理器更新；手动更新时先把旧插件移出 `extensions`，再安装新版本。不要把两个版本同时放在 `extensions`。
 
 插件复用 Forge 的 Pillow、Gradio 和已注册超分模型，不安装依赖，不需要运行 ComfyUI，不修改 Forge 源码。卸载时删除本插件文件夹并重启，已导出的图片保留。
+
+自动打码依赖是可选的。需要时双击 `安装自动打码依赖.bat`，或使用 Forge Neo 的 Python 执行：
+
+```powershell
+& "Forge Neo\\venv\\Scripts\\python.exe" -m pip install -r requirements-censor.txt
+```
+
+不安装这些依赖时，原有压缩、透明超分和水印功能仍可正常使用。
 
 ## 快速开始
 
@@ -127,9 +136,9 @@ Windows 优先使用微软雅黑/黑体。Linux/macOS 自动寻找常见中文�
 
 ## 更新
 
-v1.0.1 新增“📂 打开输出文件夹”，支持最近一次任务目录和处理前的默认/自定义目录；失败后仍保留上一次结果目录。
+v1.1.0 增加可选自动打码模块；v1.0.1 新增“📂 打开输出文件夹”。
 
-完整版本记录见 [更新日志](CHANGELOG.md)。
+完整版本记录见 [更新日志](CHANGELOG.md)，交接给后续 AI/开发者时请先阅读 [AI 开发说明](AI开发说明.md)。
 
 ## 测试与反馈
 
@@ -139,6 +148,6 @@ v1.0.1 新增“📂 打开输出文件夹”，支持最近一次任务目录�
 python -B -m unittest discover -s tests -v
 ```
 
-测试需要 Pillow。GitHub Actions 会运行图像与批处理回归检查；模型推理和 Gradio 接口的验证环境、结果及范围见 [验证记录](验证记录.md)。
+测试需要 Pillow 和 OpenCV。GitHub Actions 会运行 24 项图像、媒体和批处理回归检查；模型推理和 Gradio 接口的验证环境、结果及范围见 [验证记录](验证记录.md)。
 
 遇到问题可提交 [Issue](https://github.com/removeshort-prog/sd-webui-forge-neo-image-workshop/issues)，注明 Forge Neo / Gradio 版本、使用的超分模型、操作步骤及控制台错误。

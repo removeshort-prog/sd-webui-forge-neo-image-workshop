@@ -1,0 +1,6 @@
+# Optional automatic censoring dependencies.
+# Install these with Forge Neo's Python executable; the normal image workshop
+# does not import them unless the automatic censoring section is used.
+nudenet>=3.4.2
+dghs-imgutils>=0.22.0
+imageio-ffmpeg>=0.6.0
